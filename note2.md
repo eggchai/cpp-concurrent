@@ -162,3 +162,63 @@ void edit_document(std::string const& filename)
 ```
 
 一个分离线程的例子，当打开新的文档就启动一个新线程打开新文档并分离这个线程。
+
+## 向线程函数传递参数
+
+```C++
+void f(int i,std::string const& s);
+void oops(int some_param)
+{
+  char buffer[1024]; // 1
+  sprintf(buffer, "%i",some_param);
+  std::thread t(f,3,buffer); // 2
+  //std::thread t(f,3,std::string(buffer));
+  t.detach();
+}
+```
+
+在传入到std::thread构造函数前就构造好临时对象。否则可能出现在隐式转换过程中主线程已经结束的情况。
+
+相反的情况，期待传入一个引用，但整个对象都被复制了。
+
+```C++
+void update_data_for_widget(widget_id w,widget_data& data); // 1
+void oops_again(widget_id w)
+{
+  widget_data data;
+  std::thread t(update_data_for_widget,w,data); // 2
+  display_status();
+  t.join();
+  process_widget_data(data); // 3
+}
+```
+
+update_data_for_widget第二个参数期待传入一个引用，但是std::thread的构造函数不知道，`会无视函数期待的类型，盲目的拷贝(这里调用的是拷贝构造函数)`。最后update_data_for_widget中的data是内部拷贝的引用，而不是数据本身。`如在oops_again创建线程t时传入的是A的引用，但是线程的构造函数会直接构造一个A的拷贝B，然后把B的引用传给update_data_for_widget函数`。如果这个函数中不是个引用，那么还需要额外一次拷贝构造。
+
+上面的方法并不会修改data数据——解决方法std::ref。`什么是std::bind？`
+
+将类的成员函数作为线程函数。
+
+```C++
+class X
+{
+public:
+  void do_lengthy_work();
+};
+X my_x;
+std::thread t(&X::do_lengthy_work,&my_x); // 1
+
+
+class X
+{
+public:
+  void do_lengthy_work(int);
+};
+X my_x;
+int num(0);
+std::thread t(&X::do_lengthy_work, &my_x, num);
+```
+
+这种情况第二个参数必须得是对象指针(因为需要提供this指针)，接下来是这个成员函数显式地参数。
+
+`智能指针还没有看`
